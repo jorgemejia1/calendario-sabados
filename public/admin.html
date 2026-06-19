@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin · Home Office Sábados</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+
+<!-- ── Pantalla de login (visible por defecto) ─────────────────────────── -->
+<div id="loginScreen" class="login-wrap">
+  <div class="login-card">
+    <h2>🔐 Administración</h2>
+    <p>Ingresa tu contraseña para editar el calendario.</p>
+    <div class="form-group">
+      <label for="password">Contraseña</label>
+      <input type="password" id="password" placeholder="••••••••" autocomplete="current-password" />
+    </div>
+    <button class="btn btn-primary" id="loginBtn">Entrar</button>
+    <div class="error-msg" id="loginError">Contraseña incorrecta.</div>
+  </div>
+</div>
+
+<!-- ── Panel admin (oculto hasta autenticar) ──────────────────────────── -->
+<div id="adminPanel" style="display:none">
+
+  <header class="admin-header">
+    <div>
+      <h1>Admin · Home Office Sábados</h1>
+    </div>
+    <button class="btn-logout" id="logoutBtn">Cerrar sesión</button>
+  </header>
+
+  <div class="container" style="padding-top:20px">
+
+    <!-- Formulario de asignación manual -->
+    <div class="override-panel" id="overridePanel">
+      <h3 id="overrideTitle">Cambiar asignación</h3>
+      <div class="form-group">
+        <label>Persona asignada</label>
+        <select id="overrideName">
+          <option value="Laura Cadena">Laura Cadena</option>
+          <option value="Ramiro Munguía">Ramiro Munguía</option>
+          <option value="Joaquín Hurtado">Joaquín Hurtado</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" id="saveOverrideBtn">Guardar cambio</button>
+      <button class="btn btn-danger btn-sm mt-8" id="removeOverrideBtn" style="width:100%;display:none">
+        Quitar cambio manual (volver a rotación)
+      </button>
+      <button class="btn" id="cancelOverrideBtn" style="background:var(--border);margin-top:8px;">
+        Cancelar
+      </button>
+      <div class="error-msg" id="overrideError"></div>
+      <div class="success-msg" id="overrideSuccess">¡Guardado correctamente!</div>
+    </div>
+
+    <!-- Lista de sábados con botón editar -->
+    <div id="adminCalendarList"><div class="loading">Cargando…</div></div>
+
+  </div>
+</div>
+
+<script>
+const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+let allEntries = [];
+let editingDate = null;
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+
+async function checkAuth() {
+  const res = await fetch('/api/admin/status');
+  const { authenticated } = await res.json();
+  if (authenticated) showPanel();
+}
+
+document.getElementById('loginBtn').addEventListener('click', async () => {
+  const password = document.getElementById('password').value;
+  const err = document.getElementById('loginError');
+  err.style.display = 'none';
+  const res = await fetch('/api/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password }),
+  });
+  if (res.ok) {
+    showPanel();
+  } else {
+    err.style.display = 'block';
+  }
+});
+
+// Permitir Enter en el campo de password
+document.getElementById('password').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('loginBtn').click();
+});
+
+document.getElementById('logoutBtn').addEventListener('click', async () => {
+  await fetch('/api/logout', { method: 'POST' });
+  location.reload();
+});
+
+function showPanel() {
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('adminPanel').style.display = 'block';
+  loadCalendar();
+}
+
+// ── Calendario ────────────────────────────────────────────────────────────────
+
+async function loadCalendar() {
+  const res = await fetch('/api/calendar');
+  const { entries, nextEntry } = await res.json();
+  allEntries = entries;
+  const today = new Date().toISOString().slice(0, 10);
+
+  const byMonth = {};
+  for (const entry of entries) {
+    const sat = new Date(entry.date + 'T12:00:00Z');
+    const key = `${sat.getUTCFullYear()}-${sat.getUTCMonth()}`;
+    if (!byMonth[key]) byMonth[key] = { year: sat.getUTCFullYear(), month: sat.getUTCMonth(), rows: [] };
+    byMonth[key].rows.push(entry);
+  }
+
+  const list = document.getElementById('adminCalendarList');
+  list.innerHTML = Object.values(byMonth).map(group => {
+    const rows = group.rows.map(entry => {
+      const sat = new Date(entry.date + 'T12:00:00Z');
+      const isPast = entry.date < today;
+      const isNext = entry.date === nextEntry?.date;
+      return `<div class="saturday-row ${isPast ? 'past' : ''} ${isNext ? 'next' : ''} ${entry.isOverride ? 'override-row' : ''}">
+        <div class="sat-dot" style="background:${entry.color}"></div>
+        <div class="sat-date">
+          <span class="day-num">Sáb ${sat.getUTCDate()}</span>
+        </div>
+        <div class="sat-name" style="color:${entry.color}">${entry.name}${entry.isOverride ? ' ✏️' : ''}</div>
+        <button class="sat-edit-btn" data-date="${entry.date}" data-name="${entry.name}" data-override="${entry.isOverride}">
+          Editar
+        </button>
+      </div>`;
+    }).join('');
+
+    return `<div class="month-group">
+      <div class="month-title">${MONTHS[group.month]} ${group.year}</div>
+      ${rows}
+    </div>`;
+  }).join('');
+
+  // Adjuntar listeners a botones de edición
+  list.querySelectorAll('.sat-edit-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      openOverridePanel(btn.dataset.date, btn.dataset.name, btn.dataset.override === 'true');
+    });
+  });
+}
+
+// ── Panel de override ─────────────────────────────────────────────────────────
+
+function openOverridePanel(date, currentName, isOverride) {
+  editingDate = date;
+  const sat = new Date(date + 'T12:00:00Z');
+  document.getElementById('overrideTitle').textContent =
+    `Cambiar: sáb ${sat.getUTCDate()} de ${MONTHS[sat.getUTCMonth()].toLowerCase()}`;
+  document.getElementById('overrideName').value = currentName;
+  document.getElementById('overrideError').style.display = 'none';
+  document.getElementById('overrideSuccess').style.display = 'none';
+  document.getElementById('removeOverrideBtn').style.display = isOverride ? 'block' : 'none';
+  const panel = document.getElementById('overridePanel');
+  panel.style.display = 'block';
+  panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+document.getElementById('cancelOverrideBtn').addEventListener('click', () => {
+  document.getElementById('overridePanel').style.display = 'none';
+  editingDate = null;
+});
+
+document.getElementById('saveOverrideBtn').addEventListener('click', async () => {
+  if (!editingDate) return;
+  const name = document.getElementById('overrideName').value;
+  const err = document.getElementById('overrideError');
+  const ok  = document.getElementById('overrideSuccess');
+  err.style.display = 'none';
+  ok.style.display = 'none';
+
+  const res = await fetch('/api/admin/override', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ date: editingDate, name }),
+  });
+
+  if (res.ok) {
+    ok.style.display = 'block';
+    setTimeout(() => {
+      document.getElementById('overridePanel').style.display = 'none';
+      editingDate = null;
+      loadCalendar();
+    }, 800);
+  } else {
+    err.textContent = 'Error al guardar.';
+    err.style.display = 'block';
+  }
+});
+
+document.getElementById('removeOverrideBtn').addEventListener('click', async () => {
+  if (!editingDate) return;
+  const res = await fetch(`/api/admin/override/${editingDate}`, { method: 'DELETE' });
+  if (res.ok) {
+    document.getElementById('overridePanel').style.display = 'none';
+    editingDate = null;
+    loadCalendar();
+  }
+});
+
+// ── Iniciar ───────────────────────────────────────────────────────────────────
+checkAuth();
+</script>
+</body>
+</html>

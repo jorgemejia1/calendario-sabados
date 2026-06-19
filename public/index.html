@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Home Office Sábados</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+
+<header class="header">
+  <div>
+    <div class="header h1" style="font-size:1rem;font-weight:700;">🏠 Home Office · Sábados</div>
+    <div class="header-sub">Rotación del equipo</div>
+  </div>
+  <a href="/admin" class="admin-link">Admin</a>
+</header>
+
+<div class="container">
+
+  <!-- Tarjeta: próximo turno -->
+  <div class="next-card" id="nextCard">
+    <div class="label">Próximo turno</div>
+    <div class="person" id="nextName">Cargando…</div>
+    <div class="date-line">
+      <span id="nextDate"></span>
+      <span class="badge" id="nextBadge"></span>
+    </div>
+  </div>
+
+  <!-- Leyenda de colores -->
+  <div class="legend" id="legend"></div>
+
+  <!-- Lista de sábados agrupada por mes -->
+  <div id="calendarList"><div class="loading">Cargando calendario…</div></div>
+
+</div>
+
+<script>
+const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const WEEKDAYS = ['dom','lun','mar','mié','jue','vie','sáb'];
+
+async function load() {
+  const res = await fetch('/api/calendar');
+  const { entries, nextEntry, daysUntil, people } = await res.json();
+
+  // ── Leyenda ──
+  const legend = document.getElementById('legend');
+  legend.innerHTML = people.map(p =>
+    `<div class="legend-item">
+       <div class="legend-dot" style="background:${p.color}"></div>
+       <span>${p.name}</span>
+     </div>`
+  ).join('');
+
+  // ── Próxima tarjeta ──
+  if (nextEntry) {
+    const sat = new Date(nextEntry.date + 'T12:00:00Z');
+    document.getElementById('nextName').textContent = nextEntry.name;
+    document.getElementById('nextDate').textContent =
+      `Sáb ${sat.getUTCDate()} de ${MONTHS[sat.getUTCMonth()].toLowerCase()} ${sat.getUTCFullYear()}`;
+    const badge = document.getElementById('nextBadge');
+    badge.textContent = daysUntil === 0 ? '¡Hoy!' : daysUntil === 1 ? 'Mañana' : `En ${daysUntil} días`;
+    badge.style.background = nextEntry.color + '22';
+    badge.style.color = nextEntry.color;
+    document.getElementById('nextCard').style.borderTopColor = nextEntry.color;
+  }
+
+  // ── Lista agrupada por mes ──
+  const today = new Date().toISOString().slice(0, 10);
+  const byMonth = {};
+  for (const entry of entries) {
+    const sat = new Date(entry.date + 'T12:00:00Z');
+    const key = `${sat.getUTCFullYear()}-${sat.getUTCMonth()}`;
+    if (!byMonth[key]) byMonth[key] = { year: sat.getUTCFullYear(), month: sat.getUTCMonth(), rows: [] };
+    byMonth[key].rows.push(entry);
+  }
+
+  const list = document.getElementById('calendarList');
+  list.innerHTML = Object.values(byMonth).map(group => {
+    const rows = group.rows.map(entry => {
+      const sat = new Date(entry.date + 'T12:00:00Z');
+      const isPast = entry.date < today;
+      const isNext = entry.date === nextEntry?.date;
+      return `<div class="saturday-row ${isPast ? 'past' : ''} ${isNext ? 'next' : ''} ${entry.isOverride ? 'override-row' : ''}">
+        <div class="sat-dot" style="background:${entry.color}"></div>
+        <div class="sat-date">
+          <span class="day-num">Sáb ${sat.getUTCDate()}</span>
+        </div>
+        <div class="sat-name" style="color:${entry.color}">${entry.name}</div>
+        ${isNext ? '<div class="next-badge" style="background:'+entry.color+'">Próximo</div>' : ''}
+      </div>`;
+    }).join('');
+
+    return `<div class="month-group">
+      <div class="month-title">${MONTHS[group.month]} ${group.year}</div>
+      ${rows}
+    </div>`;
+  }).join('');
+}
+
+load();
+</script>
+</body>
+</html>
