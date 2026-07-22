@@ -13,10 +13,9 @@ const DATA_FILE = path.join(__dirname, 'data', 'calendar.json');
 const BASE_ROTATION = [
   { name: 'Laura Cadena',    color: '#5B5BD6' },
   { name: 'Joaquín Hurtado', color: '#D97706' },
-  { name: 'Ramiro Munguía',  color: '#0E8C8C' },
 ];
 // Primer sábado de la rotación
-const START_DATE = new Date('2026-06-20T12:00:00Z');
+const START_DATE = new Date('2026-07-25T12:00:00Z');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
